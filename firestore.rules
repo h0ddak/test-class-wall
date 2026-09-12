@@ -2,15 +2,46 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /memos/{memoId} {
-      allow read, delete: if true;
 
-      allow create: if request.resource.data.keys().hasOnly(['text', 'createdAt'])
+    // 사용자 정보 및 역할 컬렉션
+    match /users/{userId} {
+      // 본인 정보는 읽고 쓸 수 있으며, 교사 확인을 위해 읽기 허용
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 교사 권한 확인 헬퍼 함수
+    function isTeacher() {
+      return request.auth != null && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher')
+      );
+    }
+
+    // 메모 컬렉션
+    match /memos/{memoId} {
+      // 로그인한 사용자는 모든 메모를 읽을 수 있음
+      allow read: if true;
+
+      // 생성: 로그인한 사용자 본인의 uid로만 생성 가능 (5~50자 제한)
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['text', 'createdAt', 'uid'])
+        && request.resource.data.uid == request.auth.uid
         && request.resource.data.text is string
         && request.resource.data.text.size() >= 5
         && request.resource.data.text.size() <= 50
         && request.resource.data.createdAt is timestamp
         && request.resource.data.createdAt == request.time;
+
+      // 삭제: 교사는 모든 메모 삭제 가능, 학생은 본인이 작성한 메모만 삭제 가능
+      allow delete: if request.auth != null && (
+        isTeacher() || resource.data.uid == request.auth.uid
+      );
+
+      // 수정: 교사는 모두 수정 가능, 학생은 본인 것만 수정 가능
+      allow update: if request.auth != null && (
+        isTeacher() || resource.data.uid == request.auth.uid
+      );
     }
 
     match /{document=**} {
@@ -18,3 +49,4 @@ service cloud.firestore {
     }
   }
 }
+
