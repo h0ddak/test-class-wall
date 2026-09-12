@@ -25,8 +25,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 무료 티어 및 빠른 응답을 지원하는 gemini-2.5-flash 모델 사용
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    // 안정적인 무료 티어 gemini-1.5-flash 모델 사용
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
     const prompt = `너는 초·중등학교 학급 담벼락의 친절하고 따뜻한 AI 도우미 교사야.
 학생이 작성한 아래 메모를 읽고, 격려와 칭찬 또는 깊이 생각해볼 수 있는 1~2문장의 따뜻한 한 줄 코멘트를 한국어로 작성해줘.
@@ -54,10 +54,17 @@ ${memoText}`;
     });
 
     if (!response.ok) {
-      const errorData = await response.text();
-      console.error("Gemini API 호출 에러:", errorData);
+      const errorText = await response.text();
+      console.error("Gemini API 호출 에러 응답:", errorText);
+      let errMsg = "Gemini API 호출에 실패했습니다.";
+      try {
+        const parsed = JSON.parse(errorText);
+        if (parsed.error && parsed.error.message) {
+          errMsg = parsed.error.message;
+        }
+      } catch (e) {}
       return res.status(response.status).json({
-        error: "Gemini API 호출에 실패했습니다."
+        error: errMsg
       });
     }
 
