@@ -59,8 +59,10 @@ service cloud.firestore {
         isAdmin()
       );
 
-      // 수정: 모든 사용자에 대해 전면 차단
-      allow update: if false;
+      // 수정: 교사나 관리자가 aiComment 필드를 추가/수정하는 것만 허용
+      allow update: if request.auth != null
+        && (isTeacher() || isAdmin())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aiComment']);
     }
 
     // 그 외 모든 경로는 접근 차단

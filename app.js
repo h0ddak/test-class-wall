@@ -12,6 +12,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   onSnapshot,
   query,
   orderBy,
@@ -214,6 +215,40 @@ function render() {
   });
 }
 
+// AI 코멘트 요청 함수 (교사 또는 관리자 권한)
+async function requestAiComment(memo, buttonElement) {
+  buttonElement.disabled = true;
+  buttonElement.textContent = "AI 생각 중...";
+
+  try {
+    const res = await fetch("/api/gemini", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ memoText: memo.text })
+    });
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || "코멘트 생성 실패");
+    }
+
+    const data = await res.json();
+    const comment = data.comment;
+
+    // Firestore에 코멘트 저장
+    await updateDoc(doc(db, "memos", memo.id), {
+      aiComment: comment
+    });
+  } catch (error) {
+    console.error("AI 코멘트 요청 오류:", error);
+    alert(`AI 코멘트 생성 오류: ${error.message}`);
+    buttonElement.disabled = false;
+    buttonElement.textContent = "🤖 AI 코멘트 달기";
+  }
+}
+
 // 메모 한 장 만들기
 function makeMemo(memo) {
   const div = document.createElement("div");
@@ -225,6 +260,7 @@ function makeMemo(memo) {
 
   if (canDelete) {
     const del = document.createElement("button");
+    del.className = "del-btn";
     del.textContent = "×";
     del.addEventListener("click", function () {
       deleteMemo(memo.id);
@@ -235,6 +271,26 @@ function makeMemo(memo) {
   const span = document.createElement("span");
   span.textContent = memo.text;
   div.appendChild(span);
+
+  // AI 코멘트가 이미 작성되어 있으면 표시
+  if (memo.aiComment) {
+    const commentBox = document.createElement("div");
+    commentBox.className = "ai-comment";
+    commentBox.innerHTML = `🤖 <strong>AI 도우미:</strong> ${memo.aiComment}`;
+    div.appendChild(commentBox);
+  }
+
+  // 교사 또는 관리자에게만 "AI 코멘트 달기" 버튼 표시
+  const isTeacherOrAdmin = currentUser && (isAdmin || currentRole === "teacher");
+  if (isTeacherOrAdmin) {
+    const aiBtn = document.createElement("button");
+    aiBtn.className = "ai-btn";
+    aiBtn.textContent = memo.aiComment ? "🤖 AI 코멘트 다시 달기" : "🤖 AI 코멘트 달기";
+    aiBtn.addEventListener("click", function () {
+      requestAiComment(memo, aiBtn);
+    });
+    div.appendChild(aiBtn);
+  }
 
   return div;
 }
@@ -253,7 +309,8 @@ onSnapshot(q, function (snapshot) {
       id: docSnap.id,
       text: data.text,
       createdAt: data.createdAt,
-      uid: data.uid // 작성자 식별용 uid
+      uid: data.uid, // 작성자 식별용 uid
+      aiComment: data.aiComment // AI가 남긴 코멘트
     });
   });
   render();

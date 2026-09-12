@@ -1,23 +1,72 @@
 // ===================================================
-// Gemini에게 물어보는 서버 코드가 들어올 자리 (아직 비어 있습니다)
-//
-// 왜 서버가 필요한가요?
-//   API 키를 브라우저 코드(app.js)에 적으면 누구나 볼 수 있습니다.
-//   그래서 키는 서버에만 두고, 브라우저는 이 주소로 부탁만 합니다.
-//
-// 왜 Firebase Functions가 아니라 여기인가요?
-//   Firebase Functions는 유료 요금제(Blaze)라야 씁니다.
-//   이 프로젝트는 무료 요금제(Spark)로 진행하므로,
-//   서버가 필요한 일은 Vercel의 무료 함수로 처리합니다.
-//
-// 이 파일의 규칙
-//   api 폴더 안의 파일은 Vercel에서 자동으로 서버 주소가 됩니다.
-//   이 파일은 /api/gemini 주소가 됩니다.
-//   API 키는 코드에 적지 말고 Vercel 환경변수에 넣습니다. (process.env 로 꺼내 씁니다)
+// Vercel Serverless Function: Gemini API 코멘트 생성
+// 무료 티어 지원 모델: gemini-2.5-flash / gemini-1.5-flash
 // ===================================================
 
-export default function handler(req, res) {
-  res.status(501).json({
-    error: "아직 만들지 않았습니다. 백엔드 2 시간에 이 파일을 채웁니다."
-  });
+export default async function handler(req, res) {
+  // POST 요청만 허용
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const { memoText } = req.body || {};
+
+  if (!memoText || typeof memoText !== "string" || memoText.trim() === "") {
+    return res.status(400).json({ error: "메모 내용(memoText)이 필요합니다." });
+  }
+
+  // Vercel 환경변수에서 API 키 추출 (또는 로컬 테스트용 키)
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(500).json({
+      error: "GEMINI_API_KEY 환경변수가 설정되지 않았습니다."
+    });
+  }
+
+  try {
+    // 무료 티어 및 빠른 응답을 지원하는 gemini-2.5-flash 모델 사용
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+    const prompt = `너는 초·중등학교 학급 담벼락의 친절하고 따뜻한 AI 도우미 교사야.
+학생이 작성한 아래 메모를 읽고, 격려와 칭찬 또는 깊이 생각해볼 수 있는 1~2문장의 따뜻한 한 줄 코멘트를 한국어로 작성해줘.
+학생의 개인정보나 이름은 언급하지 마.
+
+[학생의 메모 내용]
+${memoText}`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: prompt }]
+          }
+        ],
+        generationConfig: {
+          maxOutputTokens: 200,
+          temperature: 0.7
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error("Gemini API 호출 에러:", errorData);
+      return res.status(response.status).json({
+        error: "Gemini API 호출에 실패했습니다."
+      });
+    }
+
+    const data = await response.json();
+    const comment = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "좋은 생각이에요! 계속 응원할게요.";
+
+    return res.status(200).json({ comment });
+  } catch (error) {
+    console.error("서버 내부 오류:", error);
+    return res.status(500).json({ error: "서버 처리 중 오류가 발생했습니다." });
+  }
 }
