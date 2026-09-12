@@ -64,7 +64,13 @@ function renderUserArea() {
   if (currentUser) {
     // 로그인 상태: 사용자 이름, 역할 및 로그아웃 버튼 표시
     const greeting = document.createElement("span");
-    const roleBadge = currentRole === "teacher" ? " [교사]" : " [학생]";
+    const isAdmin = currentUser.email === "puio6371@gmail.com";
+    let roleBadge = " [학생]";
+    if (isAdmin) {
+      roleBadge = " [관리자]";
+    } else if (currentRole === "teacher") {
+      roleBadge = " [교사]";
+    }
     greeting.textContent = `${currentUser.displayName || "사용자"}님 환영합니다!${roleBadge} `;
     userArea.appendChild(greeting);
 
@@ -213,8 +219,9 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  // 삭제 권한: 교사이거나 본인이 작성한 메모일 때만 삭제(×) 버튼 표시
-  const canDelete = currentUser && (currentRole === "teacher" || memo.uid === currentUser.uid);
+  // 삭제 권한: 관리자이거나 교사이거나 본인이 작성한 메모일 때만 삭제(×) 버튼 표시
+  const isAdmin = currentUser && currentUser.email === "puio6371@gmail.com";
+  const canDelete = currentUser && (isAdmin || currentRole === "teacher" || memo.uid === currentUser.uid);
 
   if (canDelete) {
     const del = document.createElement("button");

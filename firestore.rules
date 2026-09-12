@@ -3,27 +3,46 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 사용자 정보 및 역할 컬렉션
-    match /users/{userId} {
-      // 본인 정보는 읽고 쓸 수 있으며, 교사 확인을 위해 읽기 허용
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+    // 관리자 판별 헬퍼 함수 (Google 이메일 기준)
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'puio6371@gmail.com';
     }
 
-    // 교사 권한 확인 헬퍼 함수
+    // 교사 판별 헬퍼 함수
     function isTeacher() {
       return request.auth != null && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher')
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher'
       );
+    }
+
+    // 사용자 정보 및 역할 컬렉션
+    match /users/{userId} {
+      // 본인과 관리자만 읽을 수 있음
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+
+      // 처음 생성: 본인만 생성할 수 있으며 role은 반드시 'student'여야 함 (관리자는 자유롭게 생성 가능)
+      allow create: if request.auth != null && (
+        (request.auth.uid == userId && request.resource.data.role == 'student') ||
+        isAdmin()
+      );
+
+      // 수정: role을 변경하는 것은 오직 관리자만 가능 (관리자가 아니면 role 필드 변경 불가)
+      allow update: if request.auth != null && (
+        isAdmin() ||
+        (request.auth.uid == userId && request.resource.data.role == resource.data.role)
+      );
+
+      // 삭제는 관리자만 가능
+      allow delete: if isAdmin();
     }
 
     // 메모 컬렉션
     match /memos/{memoId} {
-      // 로그인한 사용자는 모든 메모를 읽을 수 있음
-      allow read: if true;
+      // 메모 읽기: 로그인한 사람만 읽을 수 있음
+      allow read: if request.auth != null;
 
-      // 생성: 로그인한 사용자 본인의 uid로만 생성 가능 (5~50자 제한)
+      // 메모 쓰기: 로그인한 사용자가 자기 uid로만 5~50자 작성
       allow create: if request.auth != null
         && request.resource.data.keys().hasOnly(['text', 'createdAt', 'uid'])
         && request.resource.data.uid == request.auth.uid
@@ -33,20 +52,20 @@ service cloud.firestore {
         && request.resource.data.createdAt is timestamp
         && request.resource.data.createdAt == request.time;
 
-      // 삭제: 교사는 모든 메모 삭제 가능, 학생은 본인이 작성한 메모만 삭제 가능
+      // 메모 삭제: 글쓴이, 교사, 관리자만 가능
       allow delete: if request.auth != null && (
-        isTeacher() || resource.data.uid == request.auth.uid
+        resource.data.uid == request.auth.uid ||
+        isTeacher() ||
+        isAdmin()
       );
 
-      // 수정: 교사는 모두 수정 가능, 학생은 본인 것만 수정 가능
-      allow update: if request.auth != null && (
-        isTeacher() || resource.data.uid == request.auth.uid
-      );
+      // 수정: 모든 사용자에 대해 전면 차단
+      allow update: if false;
     }
 
+    // 그 외 모든 경로는 접근 차단
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
-
